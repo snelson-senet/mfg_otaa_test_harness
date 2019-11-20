@@ -34,7 +34,7 @@ $(OBJ_DIR)/%.o : %.c $(DEP_DIR)/%.d
 
 $(TARGET) : $(OBJS)
 	@echo ---Start $(notdir $@) $(shell date)
-	$(CC) -shared $^  -o $@
+	$(CC) $(CFLAGS) $^  -o $@
 	@echo ---Done  $(notdir $@) $(shell date)
 
 print-% :
