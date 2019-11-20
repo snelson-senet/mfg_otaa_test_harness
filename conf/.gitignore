@@ -1,0 +1,2 @@
+*.csv
+!application_example.csv
