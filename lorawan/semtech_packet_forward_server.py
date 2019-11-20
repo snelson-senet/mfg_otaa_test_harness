@@ -126,6 +126,34 @@ class Server:
         self.socket_down.sendto(ack, self.pull_dest_addr)
         print("PULL_ACK: %s:%d" %(self.pull_dest_addr[0], self.pull_dest_addr[1]))
 
+    def transmit(self, push_pkt, tmst, frame, rxconf):
+        # base64 encode frame and strip that damn invalid newline character that python adds for giggles!!
+        b64_data = frame.encode("base64").rstrip()
+
+        token = push_pkt.next_pull_response_token()
+        tx_hdr = struct.pack('<BHB', push_pkt.version, token, PULL_RESP)
+        tx_json = {}
+        tx_json['freq'] = rxconf.freq
+        tx_json['datr'] = self.region.dr2sf(rxconf.dr)
+        tx_json['codr'] = self.region.coderate
+        tx_json['tmst'] = tmst
+        tx_json['modu'] ='LORA'
+        tx_json['ipol'] ='true'
+        tx_json['rfch'] = 0 
+        tx_json['ant']  = 0
+        tx_json['powe'] = 20
+        tx_json['data'] = b64_data
+        tx_json['size'] = len(frame)
+
+        tx_json_s = json.dumps({'txpk':tx_json})
+        tx_msg  = tx_hdr + tx_json_s 
+        if self.pull_dest_addr is not None:
+            bytes_sent = self.socket_down.sendto(tx_msg, self.pull_dest_addr)
+            print("PULL_RESP: %s:%d bytes_sent=%d, json=%s" % (self.pull_dest_addr[0], self.pull_dest_addr[1], bytes_sent, tx_json_s))
+            self.incr(PULL_RESP_CNT) 
+        else:
+            print("PULL_RESP: destination address not set (PULL_DATA message not received from client")
+
     def send_join_accept(self, rxpkt, key, rxslot, netid, devaddr, dlsettings, rxdelay, appnonce, cflist=None):
         rx_tmst = rxpkt.tmst
         tx_tmst = INVALID_TIMESTAMP
