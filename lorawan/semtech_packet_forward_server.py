@@ -126,7 +126,7 @@ class Server:
         self.socket_down.sendto(ack, self.pull_dest_addr)
         print("PULL_ACK: %s:%d" %(self.pull_dest_addr[0], self.pull_dest_addr[1]))
 
-    def transmit(self, push_pkt, tmst, frame, rxconf):
+    def transmit(self, frame, tmst, rxconf, push_pkt):
         # base64 encode frame and strip that damn invalid newline character that python adds for giggles!!
         b64_data = frame.encode("base64").rstrip()
 

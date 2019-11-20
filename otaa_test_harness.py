@@ -44,73 +44,37 @@ def rx_handler(pkt):
              return
 
         print("JREQ: APPEUI %s, DEVEUI %s" % (binascii.hexlify(appeui), binascii.hexlify(deveui)))
-        appkey = device['APPKEY']
-        rxslot = 1
-        netid = 0
-        devaddr = 1
-        dlsettings = 8
-        appnonce = 1
-        rxdelay = 1
-        send_join_accept(pkt, appkey, rxslot, netid, devaddr, dlsettings, rxdelay, appnonce)
+        send_join_accept(app, device, pkt)
 
+def send_join_accept(application, device, jreq):
+    txtmst = None 
 
-def send_join_accept(rx, key, rxslot, netid, devaddr, dlsettings, rxdelay, appnonce):
-    rx_tmst = rx.tmst
-    tx_tmst = None 
-
+    # Selct rx slot
+    rxslot = 1
     if 1 == rxslot:
-        dr = LwRegion.sf2txdr(rx.datr)
-        rxconf = LwRegion.get_rx1_conf(rx.freq, dr)
-        tx_tmst = rx_tmst + LwRegion.JOIN_RX1_DELAY * 1000000 
+        dr = LwRegion.sf2txdr(jreq.datr)
+        rxconf = LwRegion.get_rx1_conf(jreq.freq, dr)
+        txtmst = jreq.tmst + LwRegion.JOIN_RX1_DELAY * 1000000 
     elif 2 == rxslot:
         rxconf = LwRegion.get_rx2_conf()
-        tx_tmst = rx_tmst + LwRegion.JOIN_RX2_DELAY * 1000000 
+        txtmst = jreq.tmst + LwRegion.JOIN_RX2_DELAY * 1000000 
 
-    if tx_tmst is None:
+    if txtmst is None:
         print("send_join_accept: No transmit timestamp!")
         return
 
     # Get join accept frame
-    if appnonce is None:
-        appnonce = 1
+    appkey = device['APPKEY']
+    netid = 0
+    devaddr = 1
+    dlsettings = 8
+    appnonce = 1
+    rxdelay = 1
+    jacc = packet.encode_join_accept_frame(appkey, appnonce, netid, devaddr, dlsettings, rxdelay)
 
-    jacc = packet.encode_join_accept_frame(key, appnonce, netid, devaddr, dlsettings, rxdelay)
-    Forwarder.transmit(rx, jacc)
+    # Send frame  
+    Forwarder.transmit(jacc, txtmst, rxconf, jreq)
 
-
-    # base64 encode frame and strip that damn invalid newline character that python adds for giggles!!
-    b64_data = jacc.encode("base64").rstrip()
-    """
-    PULL_RESP format
-    Bytes  | Function
-    0      | protocol version = 2
-    1-2    | random token
-            | PULL_RESP identifier 0x03
-    4-end  | JSON object, starting with {, ending with }, see section 6
-    """
-    token = rxpkt.next_pull_response_token()
-    tx_hdr = struct.pack('<BHB', rxpkt.version, token, PULL_RESP)
-    tx_json = {}
-    tx_json['freq'] = rxconf.freq
-    tx_json['datr'] = self.region.dr2sf(rxconf.dr)
-    tx_json['codr'] = self.region.coderate
-    tx_json['tmst'] = tx_tmst
-    tx_json['modu'] ='LORA'
-    tx_json['ipol'] ='true'
-    tx_json['rfch'] = 0 
-    tx_json['ant']  = 0
-    tx_json['powe'] = 20
-    tx_json['data'] = b64_data
-    tx_json['size'] = len(jacc)
-
-    tx_json_s = json.dumps({'txpk':tx_json})
-    tx_msg  = tx_hdr + tx_json_s 
-    if self.pull_dest_addr is not None:
-        bytes_sent = self.socket_down.sendto(tx_msg, self.pull_dest_addr)
-        print("PULL_RESP: %s:%d bytes_sent=%d, json=%s" % (self.pull_dest_addr[0], self.pull_dest_addr[1], bytes_sent, tx_json_s))
-        self.incr(PULL_RESP_CNT) 
-    else:
-        print("PULL_RESP: destination address not set (PULL_DATA message not received from client")
 
 def display_help():
     print("Test Harness Help")
