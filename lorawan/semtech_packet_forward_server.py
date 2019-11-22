@@ -4,6 +4,10 @@ import binascii
 import struct
 import region
 import packet
+import logging
+
+logger = logging.getLogger('test_harness.packet_fwd_server')
+logger.setLevel(logging.DEBUG)
 
 VERSIONS = [1,2]
 
@@ -12,6 +16,7 @@ PUSH_ACK = 1
 PULL_DATA = 2
 PULL_RESP = 3
 PULL_ACK = 4
+TX_ACK = 5
 
 INVALID_TIMESTAMP = -1
 INVALID_FREQ = -1 
@@ -70,48 +75,50 @@ class Server:
     def run(self, rx_handler):
         self.rx_handler = rx_handler
 
-        print("Semtech Packet Forwarder: Host:%s Port:%d" % (self.server_host, self.server_port))
+        logger.info("server on %s:%d" % (self.server_host, self.server_port))
         while True:
             data, addr = self.socket_up.recvfrom(1024)
             self.receive(data, addr)
 
-    def receive(self, packet, addr):
+    def receive(self, msg, addr):
         self.incr(SOCK_RX_CNT)
-        version, = struct.unpack('=B',packet[0])
+        version, = struct.unpack('=B',msg[0])
         if version not in VERSIONS:
-             print("SMTCPF RX: Bad version %d" % version)
+             logger.warning("received bad version %d" % version)
              return
 
         # Get mesage header
         try:
-            _token, cmd, _mac = struct.unpack('<HBQ', packet[1:12])
+            _token, cmd, _mac = struct.unpack('<HBQ', msg[1:12])
         except:
-            print("SMTCPF RX: Message size=%d too small" % len(packet))
+            logger.warning("message size %d is too small" % len(msg))
             return
 
         # Process message 
         if cmd == PUSH_DATA:
             self.push_dest_addr = addr
-            self.push_data(packet, version)
+            self.push_data(msg, version)
         elif cmd == PULL_DATA:
             self.pull_dest_addr = addr
-            self.pull_data(packet)
+            self.pull_data(msg)
+        elif cmd == TX_ACK:
+            self.tx_ack(msg)
         else:
-            print("SMTCPF RX: Drop message id=%d" % cmd)
+            logger.debug("unhandled message command=%d" % cmd)
 
-    def push_data(self, packet, version):
+    def push_data(self, msg, version):
         # Parse JSON message
         try:
-            data = json.loads(packet[12:])
+            data = json.loads(msg[12:])
         except:
-            print("PUSH_DATA: JSON decode error!")
+            logger.error("push_data JSON decode error")
             return
 
         self.incr(PUSH_DATA_CNT) 
         # Send ack
-        ack = packet[:3] + struct.pack('B', PUSH_ACK)
+        ack = msg[:3] + struct.pack('B', PUSH_ACK)
         self.socket_down.sendto(ack, self.push_dest_addr)
-        print("PUSH_ACK: %s:%d" %(self.push_dest_addr[0], self.push_dest_addr[1]))
+        # logger.debug("push_ack address=%s:%d" %(self.push_dest_addr[0], self.push_dest_addr[1]))
 
         # process packets
         rxpk = data.get('rxpk', None)
@@ -121,10 +128,24 @@ class Server:
                 if (self.discard_mtypes == None) or (pkt.get_MType() not in self.discard_mtypes):
                     self.rx_handler(pkt)
 
-    def pull_data(self, pull_data_pkt):
-        ack = pull_data_pkt[:3] + struct.pack('B', PULL_ACK)
+    def pull_data(self, msg):
+        ack = msg[:3] + struct.pack('B', PULL_ACK)
         self.socket_down.sendto(ack, self.pull_dest_addr)
-        print("PULL_ACK: %s:%d" %(self.pull_dest_addr[0], self.pull_dest_addr[1]))
+        # logger.debug("pull_ack address=%s:%d" %(self.pull_dest_addr[0], self.pull_dest_addr[1]))
+
+    def tx_ack(self, msg):
+        status = 'not set'
+        # Check for downlink status indication 
+        try:
+            data = json.loads(msg[12:])
+            txpk_ack = data.get("txpk_ack", None)
+            if txpk_ack:
+                status = txpk_ack['error']
+        except:
+            pass
+
+        logger.debug("downlink status=%s" % status) 
+         
 
     def transmit(self, frame, tmst, rxconf, push_pkt):
         # base64 encode frame and strip that damn invalid newline character that python adds for giggles!!
@@ -148,63 +169,15 @@ class Server:
         tx_json_s = json.dumps({'txpk':tx_json})
         tx_msg  = tx_hdr + tx_json_s 
         if self.pull_dest_addr is not None:
-            bytes_sent = self.socket_down.sendto(tx_msg, self.pull_dest_addr)
-            print("PULL_RESP: %s:%d bytes_sent=%d, json=%s" % (self.pull_dest_addr[0], self.pull_dest_addr[1], bytes_sent, tx_json_s))
             self.incr(PULL_RESP_CNT) 
-        else:
-            print("PULL_RESP: destination address not set (PULL_DATA message not received from client")
-
-    def send_join_accept(self, rxpkt, key, rxslot, netid, devaddr, dlsettings, rxdelay, appnonce, cflist=None):
-        rx_tmst = rxpkt.tmst
-        tx_tmst = INVALID_TIMESTAMP
-
-        if 1 == rxslot:
-            dr = self.region.sf2txdr(rxpkt.datr)
-            rxconf = self.region.get_rx1_conf(rxpkt.freq, dr)
-            tx_tmst = rx_tmst + self.region.JOIN_RX1_DELAY * 1000000 
-        elif 2 == rxslot:
-            rxconf = self.region.get_rx2_conf()
-            tx_tmst = rx_tmst + self.region.JOIN_RX2_DELAY * 1000000 
-
-        if tx_tmst == INVALID_TIMESTAMP:
-            print("SMTCPF Tx JoinAccept: Invalid transmit timestamp")
-            return
-
-        # Get join accept frame
-        if appnonce is None:
-            appnonce = 1
-        jacc = packet.encode_join_accept_frame(key, appnonce, netid, devaddr, dlsettings, rxdelay, cflist)
-        # base64 encode frame and strip that damn invalid newline character that python adds for giggles!!
-        b64_data = jacc.encode("base64").rstrip()
-
-        """
-        PULL_RESP format
-        Bytes  | Function
-        0      | protocol version = 2
-        1-2    | random token
-               | PULL_RESP identifier 0x03
-        4-end  | JSON object, starting with {, ending with }, see section 6
-        """
-        token = rxpkt.next_pull_response_token()
-        tx_hdr = struct.pack('<BHB', rxpkt.version, token, PULL_RESP)
-        tx_json = {}
-        tx_json['freq'] = rxconf.freq
-        tx_json['datr'] = self.region.dr2sf(rxconf.dr)
-        tx_json['codr'] = self.region.coderate
-        tx_json['tmst'] = tx_tmst
-        tx_json['modu'] ='LORA'
-        tx_json['ipol'] ='true'
-        tx_json['rfch'] = 0 
-        tx_json['ant']  = 0
-        tx_json['powe'] = 20
-        tx_json['data'] = b64_data
-        tx_json['size'] = len(jacc)
-
-        tx_json_s = json.dumps({'txpk':tx_json})
-        tx_msg  = tx_hdr + tx_json_s 
-        if self.pull_dest_addr is not None:
+            msg_bytes = len(tx_msg)
             bytes_sent = self.socket_down.sendto(tx_msg, self.pull_dest_addr)
-            print("PULL_RESP: %s:%d bytes_sent=%d, json=%s" % (self.pull_dest_addr[0], self.pull_dest_addr[1], bytes_sent, tx_json_s))
-            self.incr(PULL_RESP_CNT) 
-        else:
-            print("PULL_RESP: destination address not set (PULL_DATA message not received from client")
+            if bytes_sent != msg_bytes: 
+                logger.error("socket sendto %s:%d bytes sent=%d != msg size=%d" % (self.pull_dest_addr[0], self.pull_dest_addr[1], bytes_sent, msg_bytes))
+                return False
+            elif logger.isEnabledFor(logging.DEBUG):
+                logger.debug("txpk=%s" %  tx_json_s)
+            return True 
+        else: # no client address condition can occur if pull response occurs before client's first pull request
+            logger.warning("pull response client address not set") 
+            return False

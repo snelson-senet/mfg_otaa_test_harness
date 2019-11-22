@@ -18,14 +18,6 @@ crypto.aes128_encrypt.argtypes = (ctypes.c_char_p, ctypes.c_uint16, ctypes.c_cha
 # void decrypt( const uint8_t *buffer, uint16_t size, const uint8_t *key, uint8_t *decBuffer );
 crypto.aes128_decrypt.argtypes = (ctypes.c_char_p, ctypes.c_uint16, ctypes.c_char_p, ctypes.c_char_p)
 
-"""
-def aes_cmac(buffer, key):
-    size = len(buffer)
-    bufin = ctypes.c_char * len(buffer)
-    keyin = ctypes.c_char * len(key)
-    mic = crypto.aes_cmac(bufin.from_buffer(buffer), size, keyin.from_buffer(key)) 
-    return mic """
-
 def aes_cmac(buffer, key):
     size = len(buffer)
     c_buf = ctypes.c_char_p(buffer)

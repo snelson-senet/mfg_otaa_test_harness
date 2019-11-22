@@ -1,11 +1,9 @@
 from collections import namedtuple
+import logging
+
+logger = logging.getLogger('test_harness.lorawan.region')
 
 RxConf = namedtuple('RxConf', ['freq', 'dr'])
-
-INVALID_FREQ = -1
-INVALID_DR = -1
-
-
 
 def get_us915_region():
     return US915Region()
@@ -13,15 +11,15 @@ def get_us915_region():
 SUPPORTED = {'US915': get_us915_region}
 
 class Region(object):
-
+    INVALID_FREQ = -1
+    INVALID_DR = -1
     JOIN_RX1_DELAY = 5
     JOIN_RX2_DELAY = 6
 
-    def __init__(self, region_name, txparams, coderate, rx1freqs, rx1_dr_offset, rx2conf, dr2sf, sf2txdr):
+    def __init__(self, region_name, coderate, rx1freqs, rx1_dr_offset, rx2conf, dr2sf, sf2txdr):
         self.region = SUPPORTED.get(region_name,None)
         assert self.region != None, "Unknown Region %s " % region_name
         self.rx2conf = rx2conf
-        self.txparams = txparams
         self.rx1freqs = rx1freqs
         self.rx1_dr_offset = rx1_dr_offset
         self.nb_rx1freqs = len(rx1freqs)
@@ -35,14 +33,14 @@ class Region(object):
             self.sf2dr_map[dr2sf[i]] = i
 
     def get_rx1_conf(self, tx_freq, tx_dr, rx1_dr_offset=0):
-        chnl = self.tx_channel(tx_freq) % self.nb_rx1freqs 
+        chnl = self.tx_channel(tx_freq, tx_dr) % self.nb_rx1freqs 
         try:
           rx_dr = self.rx1_dr_offset[tx_dr][rx1_dr_offset]
           freq  = self.rx1freqs[chnl]
           return RxConf(freq=freq, dr=rx_dr)
         except:
-            print("REGION: get_rx1_config %f failed" % tx_freq)
-            return RxConf(freq=INVALID_FREQ, dr=INVALID_DR)
+            logger.error("REGION: get_rx1_config %f failed" % tx_freq)
+            return RxConf(freq=Region.INVALID_FREQ, dr=Region.INVALID_DR)
 
     def get_rx2_conf(self):
         return self.rx2conf
@@ -57,10 +55,11 @@ class Region(object):
         try:
             return self.sf2txdr_map[sf]
         except:
-            return INVALID_DR
+            return Region.INVALID_DR
       
-    def tx_channel(self, freq_mhz):
-        return int((freq_mhz  - self.txparams[0]) / self.txparams[1])
+    def tx_channel(self, freq_mhz, datarate):
+        """ To be implemented by the region """
+        return None
 
 class US915Region(Region):
     def __init__(self):
@@ -72,12 +71,19 @@ class US915Region(Region):
 
         rx1_dr_offset =[[10,9,8,8], [11,10,9,8], [12,11,10,9], [13,12,11,10], [13,13,12,11]]
         rx1_freqs = [ round(923.3 + (i *.6), 2) for i in range(0, 8)]
-        Region.__init__(self, 'US915',  (902.3, .2), '4/5', rx1_freqs, rx1_dr_offset, RxConf(freq=923.3,dr=8), dr2sf, sf2txdr)
+        Region.__init__(self, 'US915', '4/5', rx1_freqs, rx1_dr_offset, RxConf(freq=923.3,dr=8), dr2sf, sf2txdr)
+
+    def tx_channel(self, freq_mhz, datarate):
+        if datarate in [0,1,2,3]:
+            return int((freq_mhz  - 902.3) / .2) 
+        elif datarate == 4:
+            return 64 + int((freq_mhz  - 903.0) / 1.6) 
+        else:
+            return None
        
 
 def get(region_name):
-    try:
+    if region_name in SUPPORTED:
         return SUPPORTED[region_name]()
-    except:
-        print("Region %s not supported" % region_name)
+    else:
         return None

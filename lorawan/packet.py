@@ -28,6 +28,9 @@ class Packet(object):
        self.DevNonce = None
        self.MIC = None
        self.AppKey = None
+       self.DevAddr = None
+       self.FCnt = None
+       self.FCtrl = None
 
        if PHYPayload is not None:
           self.initialize_from_phypayload(PHYPayload)
@@ -40,6 +43,8 @@ class Packet(object):
        self.MType = self.PHYPayload[0] >> 5
        if self.MType == JOIN_REQ_MTYPE:
            self.initialize_from_join_request(self.PHYPayload[1:])
+       elif self.MType in [UNCONFIRMED_UL_MTYPE, CONFIRMED_UL_MTYPE] :
+           self.initialize_from_uplink(self.PHYPayload[1:])
 
    def initialize_from_join_request(self, MACPayload):
        self.MACPayload = MACPayload
@@ -47,6 +52,9 @@ class Packet(object):
        self.DevEui = str(MACPayload[15:7:-1])
        self.DevNonce = str(MACPayload[17:15:-1])
        self.MIC = str(MACPayload[21:17:-1])
+
+   def initialize_from_uplink(self, MACPayload):
+       self.DevAddr, self.FCtrl, self.FCnt = struct.unpack("<IBH", bytes(MACPayload[:7]))
 
    def get_MType(self):
         return self.MType
@@ -69,9 +77,6 @@ class Packet(object):
    def pkt_len(self):
        return len(self.PHYPayload)
 
-   def encode(self, fmt):
-       return self.PHYPayload.encode(fmt)
-         
    def to_string(self): 
        if self.is_join_request():
            return "{} DevEui:{}, AppEui:{}".format(self.get_MType_name(), to_eui_format(self.DevEui), to_eui_format(self.AppEui))
@@ -84,7 +89,7 @@ class Packet(object):
         return crypto.aes_cmac(buffer, appkey)
 
 
-def encode_join_accept_frame(appkey, appnonce, netid, devaddr, dlsettings, rxdelay=1, cflist=None):
+def encode_join_accept_frame(appkey, appnonce, netid, devaddr, dlsettings=8, rxdelay=1, cflist=None):
 
     mtype = struct.pack("B", JOIN_ACCEPT_MTYPE<<5) 
 
