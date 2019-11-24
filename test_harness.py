@@ -1,8 +1,8 @@
 from lorawan import packet 
 from lorawan import region
+from lorawan import crypto
 from lorawan import semtech_packet_forward_server 
 import json
-import getopt, sys
 import csv
 import os
 import binascii
@@ -15,9 +15,11 @@ MAJOR_VERSION = 1
 MINOR_VERSION = 0
 TEST_HARNESS_NAME = "Test Harness - Gateway Over the Air Activation"
 
-JoinSession = namedtuple('JoinSession', ['appnonce', 'devaddr'])
+# Tuple of device network session.  Session does not include the nwkskey
+# because it is not needed by the test harness 
+JoinSession = namedtuple('JoinSession', ['appnonce', 'devaddr', 'appskey'])
 
-# Dictionary of Applications indexed by JoinEui
+# Application Database 
 AppDb = {}
 
 # custom log level for test results 
@@ -46,7 +48,6 @@ logger.addHandler(ch)
 
 CONF_DIR = 'conf'
 TEST_CONF_FILE_DEFAULT = 'test_harness.conf'
-SERVER_HOST_DEFAULT = 'localhost'
 SERVER_PORT_DEFAULT = 1780
 LORAWAN_REGION_DEFAULT = "US915"
 
@@ -68,7 +69,7 @@ class Device(object):
         self.__deveui = deveui
         self.__joined = False
         self.__joining = False
-        self.__session = JoinSession(None,None)
+        self.__session = JoinSession(None,None,None)
         self.__altrDr  = 0
 
     @property
@@ -174,12 +175,13 @@ class Application(object):
             sys.exit(-1)
         logger.info("imported joineui %s device count=%d" % (self.__joineui, len(self.__devices)))
 
-    def new_device_session(self, device):
+    def new_device_session(self, device, netid, devnonce):
         devaddr = device.session.devaddr
         if devaddr is None:
             devaddr = devaddr_generator.next() 
         appnonce = random.randint(1, 0xFFFFFF)
-        device.session = JoinSession(appnonce, devaddr)
+        appskey = crypto.compute_app_skey(appnonce, netid, devnonce, device.appkey)
+        device.session = JoinSession(appnonce, devaddr, appskey)
         self.__devaddr2device[devaddr] = device
 
     def deveui2device(self, deveui):
@@ -235,7 +237,7 @@ def send_join_accept(application, device, jreq):
                     % (application.joineui, deveui_s, channel, dr))
 
     # Initialize new session
-    application.new_device_session(device) 
+    application.new_device_session(device, application.netid, jreq.DevNonce) 
     device.joining = True
 
     # Send join accept frame
@@ -249,9 +251,13 @@ def uplink_handler(pkt):
         app = AppDb[joineui]
         device = AppDb[joineui].devaddr2device(pkt.DevAddr)
         if device is not None and device.joining:
-            device.joined = True
-            logger.test("joineui=%s, deveui=%s : status=OTAA Success" % (app.joineui, binascii.hexlify(device.deveui)))
-            return
+            validate_uplink_after_join_accept(app, device, pkt)
+
+def validate_uplink_after_join_accept(app, device, pkt):
+    device.joined = True
+    rx_mic = pkt.MIC
+    calc_mic = crypto.compute_uplink_mic(pkt.PHYPayload[1:-4], device.session.appskey, pkt.DevAddr, pkt.FCnt)
+    logger.test("joineui=%s, deveui=%s : status=OTAA Success" % (app.joineui, binascii.hexlify(device.deveui)))
 
 def initialize_test():
     conf_file = CONF_DIR + '/' + TEST_CONF_FILE_DEFAULT
@@ -294,12 +300,11 @@ if 'debug_log' in test_conf:
      logger.addHandler(dfh)
 
 # packet forwarder server configuration
-server_host = test_conf.get('server_host', SERVER_HOST_DEFAULT)
 server_port = test_conf.get('server_port', SERVER_PORT_DEFAULT)
 lwregion = test_conf.get('region', LORAWAN_REGION_DEFAULT)
 # start server 
 LwRegion = region.get(lwregion)
-Forwarder = semtech_packet_forward_server.Server(server_host, server_port, lwregion)
+Forwarder = semtech_packet_forward_server.Server("localhost", server_port, lwregion)
 Forwarder.run(rx_handler) 
 logger.critical("Unexpected server exit!")
 sys.exit(-1)

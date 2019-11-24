@@ -65,6 +65,10 @@ class Packet(object):
    def get_DevEui(self):
        return self.DevEui
 
+   @property
+   def MIC(self):
+       return bytes(self.PHYPayload[-4:])
+
    def get_MType_name(self):
         return MType.get(self.MType, self.MType)
 
