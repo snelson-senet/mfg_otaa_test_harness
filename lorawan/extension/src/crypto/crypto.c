@@ -5,7 +5,6 @@
 #include "utilities.h"
 #include "crypto.h"
 
-#define DEBUG
 #ifdef DEBUG
 #include <stdio.h>
 #define DBGPRINT(format, ...) printf(format, ## __VA_ARGS__)
@@ -82,7 +81,6 @@ void aes128_encrypt( const uint8_t *buffer, uint16_t size, const uint8_t *key, u
     uint8_t bufferIndex = 0;
     uint16_t orig_size = size;
 
-
 #ifdef DEBUG
     DBGPRINT("AES128 Encrypt: msg size:%d, key:", size);
     for(uint8_t i=0; i < 16; i++)
@@ -108,7 +106,7 @@ void aes128_encrypt( const uint8_t *buffer, uint16_t size, const uint8_t *key, u
     if( size > 0 )
     {
         memset1(inBlock, 0, 16);
-        memcpy1(inBlock, buffer + bufferIndex, size - bufferIndex);
+        memcpy1(inBlock, buffer + bufferIndex, size);
         aes_encrypt(inBlock, encBuffer + bufferIndex, &AesContext );
     }
 
@@ -150,7 +148,7 @@ void aes128_decrypt( const uint8_t *buffer, uint16_t size, const uint8_t *key, u
     if( size > 0 )
     {
         memset1(inBlock, 0, 16);
-        memcpy1(inBlock, buffer + bufferIndex, size - bufferIndex);
+        memcpy1(inBlock, buffer + bufferIndex, size);
         aes_decrypt(inBlock, decBuffer + bufferIndex, &AesContext );
     }
 
