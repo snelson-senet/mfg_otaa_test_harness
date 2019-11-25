@@ -26,7 +26,6 @@ class Packet(object):
        self.DevEui = None
        self.AppEui = None
        self.DevNonce = None
-       self.MIC = None
        self.AppKey = None
        self.DevAddr = None
        self.FCnt = None
@@ -51,7 +50,6 @@ class Packet(object):
        self.AppEui = str(MACPayload[7::-1] )
        self.DevEui = str(MACPayload[15:7:-1])
        self.DevNonce = str(MACPayload[17:15:-1])
-       self.MIC = str(MACPayload[21:17:-1])
 
    def initialize_from_uplink(self, MACPayload):
        self.DevAddr, self.FCtrl, self.FCnt = struct.unpack("<IBH", bytes(MACPayload[:7]))
@@ -64,6 +62,10 @@ class Packet(object):
 
    def get_DevEui(self):
        return self.DevEui
+
+   @property
+   def MIC(self):
+       return bytes(self.PHYPayload[-4:])
 
    def get_MType_name(self):
         return MType.get(self.MType, self.MType)
