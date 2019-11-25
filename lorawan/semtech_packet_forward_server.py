@@ -36,15 +36,28 @@ class RxPacket(packet.Packet):
 
     @property
     def freq(self):
-        return self.rxpk['freq']
+        try:
+            return self.rxpk['freq']
+        except:
+            logger.warning("rxpk no freq attribute")
+            return None
 
     @property
     def datr(self):
-        return self.rxpk['datr']
+        try:
+            return self.rxpk['datr']
+        except:
+            logger.warning("rxpk no datr attribute")
+            return None
+          
 
     @property
     def tmst(self):
-        return self.rxpk['tmst']
+        try:
+            return self.rxpk['tmst']
+        except:
+            logger.warning("rxpk no tmst attribute")
+            return None
 
     @property
     def version(self):

@@ -25,10 +25,9 @@ class Packet(object):
        self.MType = None 
        self.DevEui = None
        self.AppEui = None
-       self.DevNonce = None
-       self.MIC = None
        self.AppKey = None
        self.DevAddr = None
+       self.DevNonce = None
        self.FCnt = None
        self.FCtrl = None
 
@@ -48,10 +47,10 @@ class Packet(object):
 
    def initialize_from_join_request(self, MACPayload):
        self.MACPayload = MACPayload
-       self.AppEui = str(MACPayload[7::-1] )
-       self.DevEui = str(MACPayload[15:7:-1])
-       self.DevNonce = str(MACPayload[17:15:-1])
-       self.MIC = str(MACPayload[21:17:-1])
+       self.AppEui = bytes(MACPayload[7::-1] )
+       self.DevEui = bytes(MACPayload[15:7:-1])
+       self.DevNonce = struct.unpack("<H",bytes(MACPayload[16:18]))[0]
+       # str(MACPayload[17:15:-1])
 
    def initialize_from_uplink(self, MACPayload):
        self.DevAddr, self.FCtrl, self.FCnt = struct.unpack("<IBH", bytes(MACPayload[:7]))
@@ -92,7 +91,6 @@ class Packet(object):
    def compute_mic(self, buffer, appkey):
         return crypto.aes_cmac(buffer, appkey)
 
-
 def encode_join_accept_frame(appkey, appnonce, netid, devaddr, dlsettings=8, rxdelay=1, cflist=None):
 
     mtype = struct.pack("B", JOIN_ACCEPT_MTYPE<<5) 
@@ -102,4 +100,10 @@ def encode_join_accept_frame(appkey, appnonce, netid, devaddr, dlsettings=8, rxd
 
     mic = struct.pack("<I", crypto.aes_cmac(mtype + macpayload, appkey))
     encrypted = crypto.aes128_decrypt(macpayload + mic, appkey)
-    return mtype + encrypted
+    # return mtype + encrypted
+    return encrypted
+
+def encode_join_request_frame(joineui, deveui, devnonce, appkey):
+    data = struct.pack("B", JOIN_REQ_MTYPE<<5) + binascii.unhexlify(joineui)[::-1] + binascii.unhexlify(deveui)[::-1] + struct.pack("<H", devnonce)
+    mic = crypto.aes_cmac(data, appkey)
+    return data + struct.pack("<I",mic)

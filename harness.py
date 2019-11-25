@@ -8,6 +8,7 @@ import os
 import binascii
 import logging
 import random
+import sys
 from collections import namedtuple
 
 # Test Harness Version
@@ -20,7 +21,7 @@ TEST_HARNESS_NAME = "Test Harness - Gateway Over the Air Activation"
 JoinSession = namedtuple('JoinSession', ['appnonce', 'devaddr', 'appskey'])
 
 # Application Database 
-AppDb = {}
+appdb = {}
 
 # custom log level for test results 
 TEST = logging.WARNING + 1
@@ -52,7 +53,9 @@ SERVER_PORT_DEFAULT = 1780
 LORAWAN_REGION_DEFAULT = "US915"
 
 # Packet Forwarder initialized in main 
-Forwarder = None
+forwarder = None
+# LoRaWAN Region 
+lw_region = None
 
 # DevAddr generator
 def generate_devaddr():
@@ -129,6 +132,10 @@ class Application(object):
     def netid(self):
         return self.__netid
 
+    @property    
+    def devices(self):
+        return self.__devices
+
     def import_devices(self, device_file):
         try:
             with open(device_file) as csvfile:
@@ -173,7 +180,10 @@ class Application(object):
         except IOError:
             logger.critical("%s not found" % device_file)
             sys.exit(-1)
-        logger.info("imported joineui %s device count=%d" % (self.__joineui, len(self.__devices)))
+
+    @property
+    def nb_devices(self):
+        return len(self.__devices)
 
     def new_device_session(self, device, netid, devnonce):
         devaddr = device.session.devaddr
@@ -202,7 +212,7 @@ def join_request_handler(pkt):
 
     try:
         joineui = pkt.get_AppEui()
-        app = AppDb[joineui]
+        app = appdb[joineui]
     except:
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("joineui=%s not in test database" % binascii.hexlify(joineui))
@@ -216,23 +226,32 @@ def join_request_handler(pkt):
        logger.debug("deveui=%s not in joineui=%s test database" % (binascii.hexlify(deveui), binascii.hexlify(joineui)))
 
 def send_join_accept(application, device, jreq):
-    txtmst = None 
+    txtmst = jreq.tmst 
+    rxconf = None
+    if txtmst is None:
+        logger.error("join request transmit timestamp not set")
+        return
+
+    dr = lw_region.sf2txdr(jreq.datr)
+    if dr is None:
+        logger.error("join request no datarate")
+        return
+
     # Selct rx slot
-    dr = LwRegion.sf2txdr(jreq.datr)
     rxslot = device.get_join_rxslot()
     if 1 == rxslot:
-        rxconf = LwRegion.get_rx1_conf(jreq.freq, dr)
-        txtmst = jreq.tmst + LwRegion.JOIN_RX1_DELAY * 1000000 
+        rxconf = lw_region.get_rx1_conf(jreq.freq, dr)
+        txtmst = jreq.tmst + lw_region.JOIN_RX1_DELAY * 1000000 
     elif 2 == rxslot:
-        rxconf = LwRegion.get_rx2_conf()
-        txtmst = jreq.tmst + LwRegion.JOIN_RX2_DELAY * 1000000 
+        rxconf = lw_region.get_rx2_conf()
+        txtmst = jreq.tmst + lw_region.JOIN_RX2_DELAY * 1000000 
 
-    if txtmst is None:
-        logger.error("join accept transmit timestamp not set")
+    if rxconf is None:
+        logger.error("join accept no rxconf")
         return
 
     deveui_s = binascii.hexlify(device.deveui).upper()
-    channel = LwRegion.tx_channel(jreq.freq, dr)
+    channel = lw_region.tx_channel(jreq.freq, dr)
     logger.test("joineui=%s, deveui=%s : status=Join-request received on channel=%d, DR%d" 
                     % (application.joineui, deveui_s, channel, dr))
 
@@ -242,26 +261,30 @@ def send_join_accept(application, device, jreq):
 
     # Send join accept frame
     jacc = packet.encode_join_accept_frame(device.appkey, device.session.appnonce, application.netid, device.session.devaddr)
-    if Forwarder.transmit(jacc, txtmst, rxconf, jreq):
+    if forwarder.transmit(jacc, txtmst, rxconf, jreq):
         logger.test("joineui=%s, deveui=%s : status=Join-accept on RX%d sent to packet forwarder" % (application.joineui, deveui_s, rxslot))
+
+    logger.debug("joineui=%s, deveui=%s : new session dnonce=%04x anonce=%06x, appskey=%s" % 
+        (application.joineui, deveui_s, jreq.DevNonce, device.session.appnonce, binascii.hexlify(device.session.appskey)))
 
 def uplink_handler(pkt):
     # logger.debug("uplink devaddr %x fcntup=%d" % (pkt.DevAddr, pkt.FCnt))
-    for joineui in AppDb:
-        app = AppDb[joineui]
-        device = AppDb[joineui].devaddr2device(pkt.DevAddr)
+    for joineui in appdb:
+        app = appdb[joineui]
+        device = appdb[joineui].devaddr2device(pkt.DevAddr)
         if device is not None and device.joining:
             validate_uplink_after_join_accept(app, device, pkt)
 
 def validate_uplink_after_join_accept(app, device, pkt):
     device.joined = True
-    rx_mic = pkt.MIC
-    calc_mic = crypto.compute_uplink_mic(pkt.PHYPayload[1:-4], device.session.appskey, pkt.DevAddr, pkt.FCnt)
+    # rx_mic = pkt.MIC
+    # calc_mic = crypto.compute_uplink_mic(pkt.PHYPayload[1:-4], device.session.appskey, pkt.DevAddr, pkt.FCnt)
     logger.test("joineui=%s, deveui=%s : status=OTAA Success" % (app.joineui, binascii.hexlify(device.deveui)))
 
-def initialize_test():
+def read_conf():
     conf_file = CONF_DIR + '/' + TEST_CONF_FILE_DEFAULT
     test_conf = {}
+    app_conf  = {}
     try:
         with open(conf_file, 'r') as json_file:
             test_conf = json.load(json_file)
@@ -277,34 +300,45 @@ def initialize_test():
                 filename = CONF_DIR + '/' + jeui +  '.csv'
                 # import device
                 application.import_devices(filename)
-                AppDb[bin_jeui] = application
+                app_conf[bin_jeui] = application
+
+            for app in app_conf:
+                logger.log(TEST, "test setup: joineui=%s imported %d devices" % (app_conf[app].joineui, app_conf[app].nb_devices))
+
     except IOError:
         logger.critical("%s not found" % conf_file)
         sys.exit(-1)
     except ValueError as jex:
         logger.critical("%s: JSON error: %s" % (conf_file, jex))
         sys.exit(-1)
-    return test_conf 
-
+    return test_conf, app_conf 
 
 version="1.0.0"
-logger.test("Gateway Over the Air Activation Test Harness Version %s" % version)
 
-test_conf = initialize_test()
+def run():
+    global appdb
+    global lw_region
+    global forwarder
 
-# Logging debug to file 
-if 'debug_log' in test_conf:
-     dfh = logging.FileHandler(test_conf['debug_log'])
-     dfh.setLevel(logging.DEBUG)
-     dfh.setFormatter(logfmt)
-     logger.addHandler(dfh)
+    logger.test("Gateway Over the Air Activation Test Harness Version %s" % version)
+    test_conf, appdb = read_conf()
 
-# packet forwarder server configuration
-server_port = test_conf.get('server_port', SERVER_PORT_DEFAULT)
-lwregion = test_conf.get('region', LORAWAN_REGION_DEFAULT)
-# start server 
-LwRegion = region.get(lwregion)
-Forwarder = semtech_packet_forward_server.Server("localhost", server_port, lwregion)
-Forwarder.run(rx_handler) 
-logger.critical("Unexpected server exit!")
-sys.exit(-1)
+    # Logging debug to file 
+    if 'debug_log' in test_conf:
+        dfh = logging.FileHandler(test_conf['debug_log'])
+        dfh.setLevel(logging.DEBUG)
+        dfh.setFormatter(logfmt)
+        logger.addHandler(dfh)
+
+    # packet forwarder server configuration
+    server_port = test_conf.get('server_port', SERVER_PORT_DEFAULT)
+    region_name = test_conf.get('region', LORAWAN_REGION_DEFAULT)
+    # start server 
+    lw_region = region.get(region_name)
+    forwarder = semtech_packet_forward_server.Server("localhost", server_port, region_name)
+    forwarder.run(rx_handler) 
+    logger.critical("Unexpected server exit!")
+    sys.exit(-1)
+
+if __name__ == '__main__':
+    run()

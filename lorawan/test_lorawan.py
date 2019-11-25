@@ -60,8 +60,8 @@ class TestLoRaWAN(unittest.TestCase):
         self.assertTrue(rx2 == expected)
 
     def test_region_rx1(self):
-        tx_dr  = [0,1,2,3,4]
-        rx1_dr = [10, 11, 12, 13, 13]
+        tx_dr  = [0,1,2,3]
+        rx1_dr = [10, 11, 12, 13]
         rx1_freqs = [ round(923.3 + (i * .6),2) for i in range(0, 8)]
         r = region.get("US915")
 

@@ -2,12 +2,21 @@ import ctypes
 import os
 import platform
 import struct
+import sys
 
-# C extension shared libray path
-mydir = os.path.dirname(os.path.abspath(__file__))
-machine = platform.machine()
-libpath = os.path.join(mydir,'extension/build/', machine, "bin", "crypto.so")
-crypto = ctypes.CDLL(libpath)
+
+def initialize_crypto_extension():
+    # C extension shared libray path
+    mydir = os.path.dirname(os.path.abspath(__file__))
+    machine = platform.machine()
+    libpath = os.path.join(mydir,'extension/build/', machine, "bin", "crypto.so")
+    try:
+        return ctypes.CDLL(libpath)
+    except:
+        print("lorawan crypto c extension %s not found" % libpath)
+        sys.exit(-1)
+
+crypto = initialize_crypto_extension()
 
 # uint32_t aes_cmac( const uint8_t *buffer, uint16_t size, const uint8_t *key);
 crypto.aes_cmac.argtypes = (ctypes.c_char_p, ctypes.c_uint16, ctypes.c_char_p) 
@@ -39,7 +48,7 @@ def aes128_encrypt(buffer, key):
 
     out = ctypes.create_string_buffer(size) 
     crypto.aes128_encrypt(c_buf, size, c_key, out)
-    return out.raw 
+    return out.raw
 
 def aes128_decrypt(buffer, key):
     size = len(buffer)
@@ -68,5 +77,3 @@ def compute_nwk_skey(appnonce, netid, devnonce, key):
     nwkskey = ctypes.create_string_buffer(16)
     crypto.compute_nwk_skey(c_key, appnonce, netid, devnonce, nwkskey)
     return nwkskey.raw
-
-
