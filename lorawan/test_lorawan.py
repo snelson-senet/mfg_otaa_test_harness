@@ -41,13 +41,17 @@ class TestLoRaWAN(unittest.TestCase):
 
     def test_lorawan_packet_join_accept(self):
         appkey = binascii.unhexlify('00112233445566778899AABBCCDDEEFF')
+        expected = "2000a7a47881fd814024d3d420bacfa308"
         appnonce = 0x01020304
         netid = 0xaabbccdd 
         devaddr = 0xdeadbeef 
         dlsettings = 8
         rxdelay = 1
         frame = packet.encode_join_accept_frame(appkey, appnonce, netid, devaddr, dlsettings, rxdelay)
-        print("join accept:%s, base64:%s" % (binascii.hexlify(frame), frame.encode("base64")))
+        hex_frame = binascii.hexlify(frame) 
+        print("test_lorawan_packet_join accept: frame=%s, expected=%s" % (hex_frame, expected))
+        self.assertTrue(binascii.hexlify(frame) == expected)
+
 
     def test_get_us915region(self):
         r = region.get("US915")
@@ -60,8 +64,8 @@ class TestLoRaWAN(unittest.TestCase):
         self.assertTrue(rx2 == expected)
 
     def test_region_rx1(self):
-        tx_dr  = [0,1,2,3,4]
-        rx1_dr = [10, 11, 12, 13, 13]
+        tx_dr  = [0,1,2,3]
+        rx1_dr = [10, 11, 12, 13]
         rx1_freqs = [ round(923.3 + (i * .6),2) for i in range(0, 8)]
         r = region.get("US915")
 
