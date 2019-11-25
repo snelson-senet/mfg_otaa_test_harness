@@ -3,12 +3,13 @@ from lorawan import region
 from lorawan import crypto
 from lorawan import semtech_packet_forward_server 
 import json
-import getopt, sys
+import sys
 import csv
 import os
 import binascii
 import logging
 import random
+import glob
 from collections import namedtuple
 
 # Harness Version
@@ -272,32 +273,37 @@ def read_conf():
     conf_file = CONF_DIR + '/' + TEST_CONF_FILE_DEFAULT
     test_conf = {}
     app_conf  = {}
+
+    # Read global test configuration
     try:
         with open(conf_file, 'r') as json_file:
             test_conf = json.load(json_file)
-            for jeui in test_conf['joineui']:
-                jeui = jeui.strip()
-                try:
-                    bin_jeui = binascii.unhexlify(jeui)
-                except:
-                    logger.critical("%s: join eui %s not hexdecimal representation" % jeui)
-                    sys.exit(-1)
-                # initialize application
-                application = Application(jeui.upper())
-                filename = CONF_DIR + '/' + jeui +  '.csv'
-                # import device
-                application.import_devices(filename)
-                app_conf[bin_jeui] = application
-
-            for app in app_conf:
-                logger.log(TEST, "test setup: joineui=%s imported %d devices" % (app_conf[app].joineui, app_conf[app].nb_devices))
-
     except IOError:
         logger.critical("%s not found" % conf_file)
         sys.exit(-1)
     except ValueError as jex:
         logger.critical("%s: JSON error: %s" % (conf_file, jex))
         sys.exit(-1)
+
+    # Import device configuration
+    for filename in glob.glob(CONF_DIR + '/*.csv'):
+        base = os.path.basename(filename)
+        joineui = os.path.splitext(base)[0]
+        try:
+            bjoineui = binascii.unhexlify(joineui)
+        except:
+            logger.critical("csv file=%s is not a valid join eui" % filename)
+            sys.exit(-1)
+
+        # initialize application
+        application = Application(joineui.upper())
+        # import device
+        application.import_devices(filename)
+        app_conf[bjoineui] = application
+
+    for app in app_conf:
+        logger.log(TEST, "joineui=%s imported %d devices" % (app_conf[app].joineui, app_conf[app].nb_devices))
+
     return test_conf, app_conf 
 
 def run():

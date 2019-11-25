@@ -147,7 +147,7 @@ class Server:
         # logger.debug("pull_ack address=%s:%d" %(self.pull_dest_addr[0], self.pull_dest_addr[1]))
 
     def tx_ack(self, msg):
-        status = 'not set'
+        status = 'None'
         # Check for downlink status indication 
         try:
             data = json.loads(msg[12:])
