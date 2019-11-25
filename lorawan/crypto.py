@@ -34,6 +34,10 @@ crypto.compute_app_skey.argtypes = (ctypes.c_char_p, ctypes.c_uint32, ctypes.c_u
 # void compute_nwk_skey(const uint8_t *key,  uint32_t appnonce, uint32_t netid, uint16_t devnonce, uint8_t *nwkSKey);
 crypto.compute_nwk_skey.argtypes = (ctypes.c_char_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint16, ctypes.c_char_p)
 
+# uint32_t compute_uplink_mic(const uint8_t *buffer, uint16_t size, const uint8_t *key, uint32_t devaddr,  uint32_t fcnt)
+crypto.compute_uplink_mic.argtypes = (ctypes.c_char_p, ctypes.c_uint16, ctypes.c_char_p, ctypes.c_uint32, ctypes.c_uint32)
+crypto.compute_uplink_mic.restype = ctypes.c_uint32
+
 def aes_cmac(buffer, key):
     size = len(buffer)
     c_buf = ctypes.c_char_p(buffer)
@@ -63,7 +67,7 @@ def compute_uplink_mic(buffer, key, devaddr, fcnt):
     size = len(buffer)
     c_buf = ctypes.c_char_p(buffer)
     c_key = ctypes.c_char_p(key)
-    mic = crypto.compute_mic(c_buf, size, c_key, devaddr, fcnt)
+    mic = crypto.compute_uplink_mic(c_buf, size, c_key, devaddr, fcnt)
     return mic 
 
 def compute_app_skey(appnonce, netid, devnonce, key):

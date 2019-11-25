@@ -5,6 +5,7 @@
 #include "utilities.h"
 #include "crypto.h"
 
+// #define DEBUG
 #ifdef DEBUG
 #include <stdio.h>
 #define DBGPRINT(format, ...) printf(format, ## __VA_ARGS__)
@@ -235,7 +236,26 @@ uint32_t compute_mic(const uint8_t *buffer, uint16_t size, const uint8_t *key, u
     
     AES_CMAC_Final( Mic, AesCmacCtx );
 
-    return  ( uint32_t )( ( uint32_t )Mic[3] << 24 | ( uint32_t )Mic[2] << 16 | ( uint32_t )Mic[1] << 8 | ( uint32_t )Mic[0] );
+#ifdef DEBUG
+    DBGPRINT("KEY:");
+    for(uint8_t i=0; i < 16; i++)
+        DBGPRINT("%02x",key[i]);
+    DBGPRINT("\n");
+
+    DBGPRINT("B0:");
+    for(uint8_t i=0; i < 16; i++)
+        DBGPRINT("%02x",MicBlockB0[i]);
+    DBGPRINT("\n");
+
+    DBGPRINT("buffer(sz=%d):", size);
+    for(uint8_t i=0; i < size; i++)
+        DBGPRINT("%02x",buffer[i]);
+    DBGPRINT("\n");
+#endif
+
+   uint32_t mic = ( uint32_t )( ( uint32_t )Mic[3] << 24 | ( uint32_t )Mic[2] << 16 | ( uint32_t )Mic[1] << 8 | ( uint32_t )Mic[0] );
+   DBGPRINT("MIC=%04x",mic);
+   return mic;
 }
 
 uint32_t compute_uplink_mic(const uint8_t *buffer, uint16_t size, const uint8_t *key, uint32_t devaddr,  uint32_t fcnt)

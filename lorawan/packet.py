@@ -66,7 +66,8 @@ class Packet(object):
 
    @property
    def MIC(self):
-       return bytes(self.PHYPayload[-4:])
+       mic, = struct.unpack("<I", bytes(self.PHYPayload[-4:]))
+       return mic
 
    def get_MType_name(self):
         return MType.get(self.MType, self.MType)
@@ -93,8 +94,9 @@ class Packet(object):
 
 def encode_join_accept_frame(appkey, appnonce, netid, devaddr, dlsettings=8, rxdelay=1, cflist=None):
     mtype = struct.pack("B", JOIN_ACCEPT_MTYPE<<5) 
-    macpayload = struct.pack("<6BIBB", netid>>16 & 0xff, netid>>8 & 0xff, netid & 0xff,
-        appnonce>>16 & 0xff, appnonce>>8 & 0xff, appnonce & 0xff, devaddr, dlsettings, rxdelay)
+    macpayload = struct.pack("<6BIBB", appnonce & 0xff, (appnonce>>8) & 0xff, (appnonce>>16) & 0xff,
+                                       netid & 0xff, (netid>>8) & 0xff, (netid>>16) & 0xff, 
+                                       devaddr, dlsettings, rxdelay)
     mic = struct.pack("<I", crypto.aes_cmac(mtype + macpayload, appkey))
     encrypted = crypto.aes128_decrypt(macpayload + mic, appkey)
     return mtype + encrypted
