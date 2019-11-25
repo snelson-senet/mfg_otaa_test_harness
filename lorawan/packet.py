@@ -1,6 +1,7 @@
 import crypto
 import binascii
 import struct
+import logging
 
 JOIN_REQ_MTYPE = 0
 JOIN_ACCEPT_MTYPE = 1 
@@ -10,6 +11,9 @@ CONFIRMED_UL_MTYPE = 4
 CONFIRMED_DL_MTYPE = 5
 RFU_MTYPE = 6
 PROPRIETARY_MTYPE = 7
+
+logger = logging.getLogger('th.pkt')
+logger.setLevel(logging.DEBUG)
 
 MType = {JOIN_REQ_MTYPE:'Join Request', JOIN_ACCEPT_MTYPE:'Join Accept', 
          UNCONFIRMED_UL_MTYPE :'Unconfirmed Data Up', UNCONFIRMED_DL_MTYPE :'Unconfirmed Data Down', 
@@ -30,6 +34,7 @@ class Packet(object):
        self.DevNonce = None
        self.FCnt = None
        self.FCtrl = None
+       self.valid = False
 
        if PHYPayload is not None:
           self.initialize_from_phypayload(PHYPayload)
@@ -41,56 +46,57 @@ class Packet(object):
        self.PHYPayload = bytearray(PHYPayload)
        self.MType = self.PHYPayload[0] >> 5
        if self.MType == JOIN_REQ_MTYPE:
-           self.initialize_from_join_request(self.PHYPayload[1:])
+           self.valid = self.initialize_from_join_request(self.PHYPayload[1:])
        elif self.MType in [UNCONFIRMED_UL_MTYPE, CONFIRMED_UL_MTYPE] :
-           self.initialize_from_uplink(self.PHYPayload[1:])
+           self.valid = self.initialize_from_uplink(self.PHYPayload[1:])
 
    def initialize_from_join_request(self, MACPayload):
        self.MACPayload = MACPayload
-       self.AppEui = bytes(MACPayload[7::-1] )
-       self.DevEui = bytes(MACPayload[15:7:-1])
-       self.DevNonce = struct.unpack("<H",bytes(MACPayload[16:18]))[0]
-       # str(MACPayload[17:15:-1])
+       try:
+           self.AppEui = bytes(MACPayload[7::-1] )
+           self.DevEui = bytes(MACPayload[15:7:-1])
+           self.DevNonce = struct.unpack("<H",bytes(MACPayload[16:18]))[0]
+           return True
+       except:
+           logger.error("decode join request failed: %s" % binascii.hexlify(bytes(MACPayload)))
+           return False
 
    def initialize_from_uplink(self, MACPayload):
-       self.DevAddr, self.FCtrl, self.FCnt = struct.unpack("<IBH", bytes(MACPayload[:7]))
+       try:
+           self.DevAddr, self.FCtrl, self.FCnt = struct.unpack("<IBH", bytes(MACPayload[:7]))
+           return True
+       except:
+           logger.error("unpack uplink failed: %s", binascii.hexlify(bytes(self.MACPayload))) 
+           return False
 
    def get_MType(self):
-        return self.MType
+        return self.MType if self.valid else None
 
    def get_AppEui(self):
        return self.AppEui
 
    def get_DevEui(self):
-       return self.DevEui
+       return self.DevEui if self.valid else None
 
    @property
    def MIC(self):
-       mic, = struct.unpack("<I", bytes(self.PHYPayload[-4:]))
+       mic = None
+       if self.valid:
+           mic, = struct.unpack("<I", bytes(self.PHYPayload[-4:]))
        return mic
 
    def get_MType_name(self):
         return MType.get(self.MType, self.MType)
 
    def is_join_request(self):
-        return self.MType == JOIN_REQ_MTYPE 
+        return self.MType == JOIN_REQ_MTYPE if self.valid else False
 
    def is_join_accept(self):
-        return self.MType == JOIN_ACCEPT_MTYPE 
+        return self.MType == JOIN_ACCEPT_MTYPE  if self.valid else False
 
    def pkt_len(self):
-       return len(self.PHYPayload)
+       return len(self.PHYPayload) if self.valid else 0
 
-   def to_string(self): 
-       if self.is_join_request():
-           return "{} DevEui:{}, AppEui:{}".format(self.get_MType_name(), to_eui_format(self.DevEui), to_eui_format(self.AppEui))
-       elif self.is_join_accept():
-           return "%s PHYPayload: %s" % (self.get_MType_name(), binascii.hexlify(str(self.PHYPayload)))
-       else:
-           return "{}".format(self.get_MType_name())
-
-   def compute_mic(self, buffer, appkey):
-        return crypto.aes_cmac(buffer, appkey)
 
 def encode_join_accept_frame(appkey, appnonce, netid, devaddr, dlsettings=8, rxdelay=1, cflist=None):
     mtype = struct.pack("B", JOIN_ACCEPT_MTYPE<<5) 

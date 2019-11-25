@@ -30,7 +30,7 @@ def testlog(self, message, *args, **kws):
     self.log(TEST, message, *args, **kws)
 logging.Logger.test = testlog
 
-logger = logging.getLogger('test_harness')
+logger = logging.getLogger('th')
 logger.setLevel(logging.DEBUG)
 
 #Logger format
@@ -134,7 +134,7 @@ class Application(object):
     def devices(self):
         return self.__devices
 
-    def import_devices(self, device_file):
+    def import_devices(self, joineui, device_file):
         try:
             with open(device_file) as csvfile:
                 reader = csv.DictReader(csvfile)
@@ -177,6 +177,8 @@ class Application(object):
         except IOError:
             logger.critical("%s not found" % device_file)
             sys.exit(-1)
+
+        logger.log(TEST, "joineui=%s imported %d devices" % (joineui, self.nb_devices))
 
     @property
     def nb_devices(self):
@@ -296,13 +298,11 @@ def read_conf():
             sys.exit(-1)
 
         # initialize application
-        application = Application(joineui.upper())
+        joineui = joineui.upper()
+        application = Application(joineui)
         # import device
-        application.import_devices(filename)
+        application.import_devices(joineui, filename)
         app_conf[bjoineui] = application
-
-    for app in app_conf:
-        logger.log(TEST, "joineui=%s imported %d devices" % (app_conf[app].joineui, app_conf[app].nb_devices))
 
     return test_conf, app_conf 
 

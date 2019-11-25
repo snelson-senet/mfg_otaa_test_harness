@@ -6,7 +6,7 @@ import region
 import packet
 import logging
 
-logger = logging.getLogger('test_harness.packet_fwd_server')
+logger = logging.getLogger('th.smtcpf')
 logger.setLevel(logging.DEBUG)
 
 VERSIONS = [1,2]
