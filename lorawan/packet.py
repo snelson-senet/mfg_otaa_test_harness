@@ -12,7 +12,7 @@ CONFIRMED_DL_MTYPE = 5
 RFU_MTYPE = 6
 PROPRIETARY_MTYPE = 7
 
-logger = logging.getLogger('th.pkt')
+logger = logging.getLogger('harness.lwpacket')
 logger.setLevel(logging.DEBUG)
 
 MType = {JOIN_REQ_MTYPE:'Join Request', JOIN_ACCEPT_MTYPE:'Join Accept', 
@@ -34,7 +34,7 @@ class Packet(object):
        self.DevNonce = None
        self.FCnt = None
        self.FCtrl = None
-       self.valid = False
+       self.__valid = False
 
        if PHYPayload is not None:
           self.initialize_from_phypayload(PHYPayload)
@@ -46,9 +46,9 @@ class Packet(object):
        self.PHYPayload = bytearray(PHYPayload)
        self.MType = self.PHYPayload[0] >> 5
        if self.MType == JOIN_REQ_MTYPE:
-           self.valid = self.initialize_from_join_request(self.PHYPayload[1:])
+           self.__valid = self.initialize_from_join_request(self.PHYPayload[1:])
        elif self.MType in [UNCONFIRMED_UL_MTYPE, CONFIRMED_UL_MTYPE] :
-           self.valid = self.initialize_from_uplink(self.PHYPayload[1:])
+           self.__valid = self.initialize_from_uplink(self.PHYPayload[1:])
 
    def initialize_from_join_request(self, MACPayload):
        self.MACPayload = MACPayload
@@ -58,7 +58,7 @@ class Packet(object):
            self.DevNonce = struct.unpack("<H",bytes(MACPayload[16:18]))[0]
            return True
        except:
-           logger.error("decode join request failed: %s" % binascii.hexlify(bytes(MACPayload)))
+           logger.warning("decode join request failed")
            return False
 
    def initialize_from_uplink(self, MACPayload):
@@ -66,7 +66,7 @@ class Packet(object):
            self.DevAddr, self.FCtrl, self.FCnt = struct.unpack("<IBH", bytes(MACPayload[:7]))
            return True
        except:
-           logger.error("unpack uplink failed: %s", binascii.hexlify(bytes(self.MACPayload))) 
+           logger.warning("decode uplink failed")
            return False
 
    def get_MType(self):
@@ -77,6 +77,10 @@ class Packet(object):
 
    def get_DevEui(self):
        return self.DevEui if self.valid else None
+
+   @property
+   def valid(self):
+       return self.__valid
 
    @property
    def MIC(self):

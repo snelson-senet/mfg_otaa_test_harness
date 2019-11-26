@@ -5,8 +5,10 @@ import struct
 import region
 import packet
 import logging
+import errno
+import sys
 
-logger = logging.getLogger('th.smtcpf')
+logger = logging.getLogger('harness.pktfwdr')
 logger.setLevel(logging.DEBUG)
 
 VERSIONS = [1,2]
@@ -88,10 +90,19 @@ class Server:
     def run(self, rx_handler):
         self.rx_handler = rx_handler
 
-        logger.info("server on %s:%d" % (self.server_host, self.server_port))
+        logger.info("server accepting connections on %s:%d" % (self.server_host, self.server_port))
         while True:
-            data, addr = self.socket_up.recvfrom(1024)
+            try:
+                data, addr = self.socket_up.recvfrom(1024)
+            except socket.error as e:
+                if e.code != errno.EINTR:
+                    logger.critical("Error receving from socket:  %s" % e)
+                    sys.exit(1)
+                else:
+                    logger.warning("socket EINTR error")
+                    continue
             self.receive(data, addr)
+                
 
     def receive(self, msg, addr):
         self.incr(SOCK_RX_CNT)
@@ -138,6 +149,11 @@ class Server:
         if rxpk is not None:
             for pkt in rxpk:
                 pkt = RxPacket(version, pkt)
+                if pkt.valid == False:
+                    logger.debug("invalid rxpk: %s" % rxpk)
+                    continue
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug("rxpk: %s" % pkt.rxpk)
                 if (self.discard_mtypes == None) or (pkt.get_MType() not in self.discard_mtypes):
                     self.rx_handler(pkt)
 

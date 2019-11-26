@@ -1,7 +1,7 @@
 from collections import namedtuple
 import logging
 
-logger = logging.getLogger('th.lwregion')
+logger = logging.getLogger('harness.lwregion')
 
 RxConf = namedtuple('RxConf', ['freq', 'dr'])
 

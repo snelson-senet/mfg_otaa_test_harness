@@ -1,7 +1,7 @@
 from lorawan import packet 
 from lorawan import region
 from lorawan import crypto
-from lorawan import semtech_packet_forward_server 
+from lorawan import packet_forwarder_server 
 import json
 import sys
 import csv
@@ -30,21 +30,22 @@ def testlog(self, message, *args, **kws):
     self.log(TEST, message, *args, **kws)
 logging.Logger.test = testlog
 
-logger = logging.getLogger('th')
+logger = logging.getLogger('harness')
 logger.setLevel(logging.DEBUG)
 
 #Logger format
-logfmt = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+tfmt = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
 # test logging 
 th = logging.FileHandler('test.log')
 th.setLevel(TEST)
-th.setFormatter(logfmt)
+th.setFormatter(tfmt)
 logger.addHandler(th)
 
 # console logging
 ch = logging.StreamHandler()
-ch.setFormatter(logfmt)
+cfmt = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+ch.setFormatter(cfmt)
 logger.addHandler(ch)
 
 CONF_DIR = 'conf'
@@ -190,8 +191,6 @@ class Application(object):
             devaddr = devaddr_generator.next() 
         appnonce = random.randint(1, 0xFFFFFF)
         nwkskey = crypto.compute_nwk_skey(appnonce, netid, devnonce, device.appkey)
-        logger.debug("new session devaddr=%04X, anonce=%04X, devnonce=%02X, nwkskey=%s" 
-                % (devaddr, appnonce, devnonce, binascii.hexlify(nwkskey)))
         device.session = JoinSession(appnonce, devaddr, nwkskey)
         self.__devaddr2device[devaddr] = device
 
@@ -208,15 +207,12 @@ def rx_handler(pkt):
         uplink_handler(pkt)
 
 def join_request_handler(pkt):
-    if logger.isEnabledFor(logging.DEBUG):
-        logger.debug("rxpk: %s" % pkt.rxpk)
-
     try:
         joineui = pkt.get_AppEui()
         app = appdb[joineui]
     except:
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("joineui=%s not in test database" % binascii.hexlify(joineui))
+            logger.debug("joineui=%s not configured" % binascii.hexlify(joineui))
         return
 
     deveui = pkt.get_DevEui()
@@ -224,7 +220,7 @@ def join_request_handler(pkt):
     if device is not None:
         send_join_accept(app, device, pkt)
     else:
-       logger.debug("deveui=%s not in joineui=%s test database" % (binascii.hexlify(deveui), binascii.hexlify(joineui)))
+       logger.debug("joineui=%s deveui=%s not configured" % (binascii.hexlify(joineui), binascii.hexlify(deveui)))
 
 def send_join_accept(application, device, jreq):
     txtmst = None 
@@ -318,7 +314,7 @@ def run():
     if 'debug_log' in test_conf:
         dfh = logging.FileHandler(test_conf['debug_log'])
         dfh.setLevel(logging.DEBUG)
-        dfh.setFormatter(logfmt)
+        dfh.setFormatter(cfmt)
         logger.addHandler(dfh)
 
     # packet forwarder server configuration
@@ -326,7 +322,7 @@ def run():
     region_name = test_conf.get('region', LORAWAN_REGION_DEFAULT)
     # start server 
     lw_region = region.get(region_name)
-    forwarder = semtech_packet_forward_server.Server("localhost", server_port, region_name)
+    forwarder = packet_forwarder_server.Server("localhost", server_port, region_name)
     forwarder.run(rx_handler) 
     logger.critical("Unexpected server exit!")
     sys.exit(-1)

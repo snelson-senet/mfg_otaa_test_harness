@@ -3,7 +3,9 @@ import os
 import platform
 import struct
 import sys
+import logging
 
+logger = logging.getLogger("harness.lwcrypto")
 
 def initialize_crypto_extension():
     # C extension shared libray path
@@ -13,7 +15,7 @@ def initialize_crypto_extension():
     try:
         return ctypes.CDLL(libpath)
     except:
-        print("lorawan crypto c extension %s not found" % libpath)
+        logger.critical("lorawan crypto c extension %s not found" % libpath)
         sys.exit(-1)
 
 crypto = initialize_crypto_extension()
