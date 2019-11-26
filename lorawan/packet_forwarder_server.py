@@ -5,8 +5,10 @@ import struct
 import region
 import packet
 import logging
+import errno
+import sys
 
-logger = logging.getLogger('test_harness.packet_fwd_server')
+logger = logging.getLogger('harness.pktfwdr')
 logger.setLevel(logging.DEBUG)
 
 VERSIONS = [1,2]
@@ -36,15 +38,28 @@ class RxPacket(packet.Packet):
 
     @property
     def freq(self):
-        return self.rxpk['freq']
+        try:
+            return self.rxpk['freq']
+        except:
+            logger.warning("rxpk no freq attribute")
+            return None
 
     @property
     def datr(self):
-        return self.rxpk['datr']
+        try:
+            return self.rxpk['datr']
+        except:
+            logger.warning("rxpk no datr attribute")
+            return None
+          
 
     @property
     def tmst(self):
-        return self.rxpk['tmst']
+        try:
+            return self.rxpk['tmst']
+        except:
+            logger.warning("rxpk no tmst attribute")
+            return None
 
     @property
     def version(self):
@@ -75,10 +90,19 @@ class Server:
     def run(self, rx_handler):
         self.rx_handler = rx_handler
 
-        logger.info("server on %s:%d" % (self.server_host, self.server_port))
+        logger.info("server accepting connections on %s:%d" % (self.server_host, self.server_port))
         while True:
-            data, addr = self.socket_up.recvfrom(1024)
+            try:
+                data, addr = self.socket_up.recvfrom(1024)
+            except socket.error as e:
+                if e.errno != errno.EINTR:
+                    logger.critical("Error receving from socket:  %s" % e)
+                    sys.exit(1)
+                else:
+                    logger.warning("Ignoring socket EINTR exception")
+                    continue
             self.receive(data, addr)
+                
 
     def receive(self, msg, addr):
         self.incr(SOCK_RX_CNT)
@@ -125,6 +149,11 @@ class Server:
         if rxpk is not None:
             for pkt in rxpk:
                 pkt = RxPacket(version, pkt)
+                if pkt.valid == False:
+                    logger.debug("invalid rxpk: %s" % rxpk)
+                    continue
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug("rxpk: %s" % pkt.rxpk)
                 if (self.discard_mtypes == None) or (pkt.get_MType() not in self.discard_mtypes):
                     self.rx_handler(pkt)
 
@@ -134,7 +163,7 @@ class Server:
         # logger.debug("pull_ack address=%s:%d" %(self.pull_dest_addr[0], self.pull_dest_addr[1]))
 
     def tx_ack(self, msg):
-        status = 'not set'
+        status = 'None'
         # Check for downlink status indication 
         try:
             data = json.loads(msg[12:])

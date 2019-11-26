@@ -1,7 +1,7 @@
 export
 .PHONY: all clean
 
-PLAT_NAME :=armv5tej1
+PLAT_NAME :=armv5tejl
 BUILD_DIR := $(TOP_DIR)/build/$(PLAT_NAME)
 OBJ_DIR   := $(BUILD_DIR)/obj
 BIN_DIR   := $(BUILD_DIR)/bin

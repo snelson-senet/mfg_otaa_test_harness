@@ -1,7 +1,7 @@
 from collections import namedtuple
 import logging
 
-logger = logging.getLogger('test_harness.lorawan.region')
+logger = logging.getLogger('harness.lwregion')
 
 RxConf = namedtuple('RxConf', ['freq', 'dr'])
 
@@ -33,14 +33,14 @@ class Region(object):
             self.sf2dr_map[dr2sf[i]] = i
 
     def get_rx1_conf(self, tx_freq, tx_dr, rx1_dr_offset=0):
-        chnl = self.tx_channel(tx_freq, tx_dr) % self.nb_rx1freqs 
         try:
+          chnl = self.tx_channel(tx_freq, tx_dr) % self.nb_rx1freqs 
           rx_dr = self.rx1_dr_offset[tx_dr][rx1_dr_offset]
           freq  = self.rx1freqs[chnl]
           return RxConf(freq=freq, dr=rx_dr)
         except:
-            logger.error("REGION: get_rx1_config %f failed" % tx_freq)
-            return RxConf(freq=Region.INVALID_FREQ, dr=Region.INVALID_DR)
+            logger.error("REGION: get_rx1_config failed")
+            return None 
 
     def get_rx2_conf(self):
         return self.rx2conf
@@ -55,7 +55,7 @@ class Region(object):
         try:
             return self.sf2txdr_map[sf]
         except:
-            return Region.INVALID_DR
+             return 
       
     def tx_channel(self, freq_mhz, datarate):
         """ To be implemented by the region """
