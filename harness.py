@@ -60,7 +60,7 @@ lw_region = None
 
 # DevAddr generator
 def generate_devaddr():
-    for devaddr in range(0xFFFF0000,0xFFFFFFFF):
+    for devaddr in range(1,0x1FFFFF):
         yield devaddr 
 devaddr_generator = generate_devaddr()
 
@@ -116,7 +116,6 @@ class Device(object):
 
 class Application(object):
     DEFAULT_NETID = 0
-
     def __init__(self, joineui, netid=DEFAULT_NETID):
         self.__joineui = joineui
         self.__devices = {}
