@@ -69,7 +69,6 @@ class Device(object):
     def __init__(self, deveui, appkey):
         self.__appkey = appkey
         self.__deveui = deveui
-        self.__joined = False
         self.__joining = False
         self.__session = JoinSession(None,None,None)
         self.__altrDr  = 0
@@ -89,17 +88,6 @@ class Device(object):
     @joining.setter
     def joining(self, joining):
         self.__joining = joining
-        if joining:
-            self.__joined = False
-    @property
-    def joined(self):
-        return self.__joined 
-
-    @joined.setter
-    def joined(self, joined):
-        self.__joined = joined
-        if self.__joined:
-            self.__joining = False
 
     @property
     def session(self):
@@ -261,10 +249,11 @@ def uplink_handler(pkt):
 def validate_uplink_after_join_accept(app, device, pkt):
     mic = crypto.compute_uplink_mic(bytes(pkt.PHYPayload[:-4]), device.session.nwkskey, pkt.DevAddr, pkt.FCnt)
     if pkt.MIC == mic:
-        device.joined = True
         logger.test("joineui=%s, deveui=%s : status=OTAA Success" % (app.joineui, binascii.hexlify(device.deveui)))
     else:
         logger.test("joineui=%s, deveui=%s : status=MIC check failed" % (app.joineui, binascii.hexlify(device.deveui)))
+
+    device.joining = False
 
 def read_conf():
     conf_file = CONF_DIR + '/' + TEST_CONF_FILE_DEFAULT
