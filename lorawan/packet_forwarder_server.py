@@ -95,11 +95,11 @@ class Server:
             try:
                 data, addr = self.socket_up.recvfrom(1024)
             except socket.error as e:
-                if e.code != errno.EINTR:
+                if e.errno != errno.EINTR:
                     logger.critical("Error receving from socket:  %s" % e)
                     sys.exit(1)
                 else:
-                    logger.warning("socket EINTR error")
+                    logger.warning("Ignoring socket EINTR exception")
                     continue
             self.receive(data, addr)
                 
